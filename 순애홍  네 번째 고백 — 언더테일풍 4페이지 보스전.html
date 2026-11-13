@@ -1,0 +1,1332 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>순애홍 — 네 번째 고백</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/galmuri@latest/dist/galmuri.css">
+<style>
+  html,body{margin:0;height:100%;background:#000;overflow:hidden;-webkit-user-select:none;user-select:none}
+  body{display:flex;align-items:center;justify-content:center}
+  #wrap{position:relative;width:min(100vw,calc(100vh * 4 / 3));aspect-ratio:4/3}
+  canvas{width:100%;height:100%;display:block;image-rendering:pixelated;touch-action:none;background:#000}
+  #tools{position:absolute;top:6px;right:6px;display:flex;gap:6px;z-index:2}
+  #tools button{font:12px "Galmuri11",sans-serif;color:#fff;background:#000;border:2px solid #fff;padding:5px 8px;cursor:pointer}
+  #tools button:hover{background:#ff5c9a;color:#000}
+  #photoFile{display:none}
+  #nameBox{position:absolute;inset:0;background:rgba(0,0,0,.85);display:flex;align-items:center;justify-content:center;z-index:5}
+  #nameBox[hidden]{display:none}
+  #nameBox .nb{border:4px solid #fff;background:#000;padding:18px 22px;font:16px "Galmuri11",sans-serif;color:#fff;text-align:center;line-height:1.7}
+  #nameBox input{font:20px "Galmuri11",sans-serif;width:210px;text-align:center;color:#fff;background:#000;border:2px solid #ff5c9a;padding:6px;margin:10px 0;outline:none;-webkit-user-select:text;user-select:text}
+  #nameBox .row{display:flex;gap:8px;justify-content:center}
+  #nameBox button{font:13px "Galmuri11",sans-serif;color:#fff;background:#000;border:2px solid #fff;padding:6px 12px;cursor:pointer}
+  #nameBox button:hover{background:#ff5c9a;color:#000}
+  #nameBox small{color:#999;font-size:12px}
+  #wrap{container-type:inline-size}
+  #titleMenu{position:absolute;left:0;right:0;bottom:0;height:22%;background:#000;border-top:3px solid #fff;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1cqw;z-index:3;pointer-events:none;font-family:"Galmuri11",sans-serif;color:#fff}
+  #titleMenu[hidden]{display:none}
+  #titleMenu .tmRow{display:flex;gap:2cqw;pointer-events:auto}
+  #titleMenu button{font:inherit;font-size:13px;font-size:2.5cqw;line-height:1.35;color:#fff;background:#000;border:2px solid #fff;padding:1.2cqw 2.4cqw;cursor:pointer;touch-action:manipulation;text-align:center}
+  #titleMenu button:hover,#titleMenu button:active{background:#ff5c9a;color:#000}
+  #titleMenu button:hover em,#titleMenu button:active em{color:#000}
+  #titleMenu em{display:block;font-style:normal;font-size:.85em;color:#ff9cc7}
+  #titleMenu .tmHint{font-size:11px;font-size:2cqw;color:#aaa}
+  @media (pointer:coarse){#tools button{font-size:13px;padding:8px 10px}}
+  @media (orientation:portrait) and (max-width:700px){body::after{content:"📱 가로로 돌리면 더 크게 보여요";position:fixed;left:0;right:0;bottom:14px;text-align:center;font:13px "Galmuri11",sans-serif;color:#ff9cc7;pointer-events:none}}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="game"></canvas>
+  <div id="tools">
+    <button id="nameBtn" title="보스 이름을 바꿉니다">✏️ 보스 이름</button>
+    <button id="photoBtn" title="보스 얼굴로 쓸 사진을 선택합니다">📷 보스 사진</button>
+    <button id="muteBtn" title="소리 켜기/끄기 (M)">🔊</button>
+  </div>
+  <div id="nameBox" hidden>
+    <div class="nb">
+      <div>보스의 이름을 정해 주세요</div>
+      <input id="nameInput" maxlength="8" autocomplete="off" spellcheck="false" placeholder="순애홍">
+      <div><small>최대 8글자 · 은/는, 이/가 같은 조사는 자동으로 맞춰집니다</small></div>
+      <div class="row" style="margin-top:10px">
+        <button id="nameOk">확인</button>
+        <button id="nameReset">기본값</button>
+        <button id="nameCancel">취소</button>
+      </div>
+    </div>
+  </div>
+  <div id="titleMenu" hidden>
+    <div class="tmRow">
+      <button id="tmName" type="button"><span>✏️ 이름을 선택하세요</span><em id="tmNameV"></em></button>
+      <button id="tmPhoto" type="button"><span>📷 사진을 선택하세요</span><em id="tmPhotoV"></em></button>
+    </div>
+    <div class="tmHint">화면을 터치하거나 Z 키를 누르면 시작합니다</div>
+  </div>
+</div>
+<input type="file" id="photoFile" accept="image/*">
+
+<script>
+(() => {
+'use strict';
+
+/* =====================================================================
+   기본 설정
+===================================================================== */
+const W = 640, H = 480;
+const cv = document.getElementById('game');
+const ctx = cv.getContext('2d');
+cv.width = W; cv.height = H;
+ctx.imageSmoothingEnabled = false;
+
+/* =====================================================================
+   보스 이름 설정 (화면에 그려지는 모든 '순애홍'을 설정한 이름으로 치환)
+===================================================================== */
+const DEF_NAME = '순애홍';
+let BOSS = DEF_NAME;
+try { const sn = localStorage.getItem('sunaehongName'); if (sn) BOSS = sn.slice(0, 8); } catch (e) {}
+const JOSA = { '이에요': '예요', '이었': '였', '이라': '라', '이다': '다', '이야': '야', '은': '는', '이': '가', '을': '를', '과': '와', '으로': '로' };
+function nm(s) {
+  if (BOSS === DEF_NAME || typeof s !== 'string' || s.indexOf('순') < 0) return s;
+  const code = BOSS.charCodeAt(BOSS.length - 1) - 0xAC00;
+  const hangul = code >= 0 && code < 11172, jong = hangul ? code % 28 : 1;
+  s = s.replace(/순애?$/, m => BOSS.slice(0, m.length));   // 타자 효과 도중의 이름 일부
+  return s.replace(/순애홍(이에요|이었|이라|이다|이야|은|이|을|과|으로)?/g, (m, p) => {
+    if (!p) return BOSS;
+    if (hangul && jong === 0) return BOSS + JOSA[p];
+    if (hangul && jong === 8 && p === '으로') return BOSS + '로';
+    return BOSS + p;
+  });
+}
+{
+  const _fill = ctx.fillText.bind(ctx), _stroke = ctx.strokeText.bind(ctx), _meas = ctx.measureText.bind(ctx);
+  ctx.fillText = (t, ...a) => _fill(nm(String(t)), ...a);
+  ctx.strokeText = (t, ...a) => _stroke(nm(String(t)), ...a);
+  ctx.measureText = t => _meas(nm(String(t)));
+}
+document.title = BOSS + ' — 네 번째 고백';
+
+const FONT = '"Galmuri11","DotGothic16","Malgun Gothic","Apple SD Gothic Neo",monospace';
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const rand = (a, b) => a + Math.random() * (b - a);
+const rgba = (hex, a) => { const n = parseInt(hex.slice(1), 16); return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${a})`; };
+const LVS = [1, 5, 9, 14, 19];
+
+/* =====================================================================
+   오디오 (WebAudio 칩튠 효과음 + 간단한 BGM)
+===================================================================== */
+let AC = null, muted = false;
+function initAudio() {
+  if (!AC) { try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} }
+  if (AC && AC.state === 'suspended') AC.resume();
+}
+function tone(freq, dur, type = 'square', vol = 0.05, slide = 0, delay = 0) {
+  if (muted || !AC) return;
+  const t = AC.currentTime + delay;
+  const o = AC.createOscillator(), g = AC.createGain();
+  o.type = type;
+  o.frequency.setValueAtTime(freq, t);
+  if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(30, freq + slide), t + dur);
+  g.gain.setValueAtTime(vol, t);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g); g.connect(AC.destination);
+  o.start(t); o.stop(t + dur + 0.03);
+}
+const sfx = {
+  blip() { tone(320 + Math.random() * 60, 0.045, 'square', 0.03); },
+  select() { tone(560, 0.07, 'square', 0.05); },
+  move() { tone(400, 0.04, 'square', 0.04); },
+  hit() { tone(180, 0.2, 'sawtooth', 0.09, -120); },
+  slash() { tone(1000, 0.22, 'sawtooth', 0.06, -800); },
+  tick() { tone(760, 0.03, 'square', 0.02); },
+  charge() { tone(180, 0.7, 'sawtooth', 0.035, 500); },
+  beam() { tone(120, 0.5, 'sawtooth', 0.1, -70); tone(60, 0.55, 'square', 0.08); },
+  heal() { tone(520, 0.1, 'triangle', 0.08); tone(780, 0.16, 'triangle', 0.08, 0, 0.1); },
+  swap() { tone(300, 0.3, 'square', 0.06, 600); },
+  shatter() { tone(500, 0.5, 'sawtooth', 0.08, -420); tone(200, 0.6, 'square', 0.06, -150, 0.05); }
+};
+let mT = 0, mS = 0;
+function music(dt) {
+  if (muted || !AC || AC.state !== 'running') return;
+  const battle = G.scene === 'battle';
+  const atk = battle && G.bs === 'attack';
+  const iv = atk ? 0.17 : 0.3;
+  mT += dt; if (mT < iv) return; mT -= iv; mS++;
+  const root = [110, 116.5, 123.5, 130.8][battle ? G.page : 0];
+  const sc = [0, 3, 7, 10, 12, 15, 12, 7];
+  if (mS % 2 === 0) tone(root * ((mS % 16) < 8 ? 1 : 0.75), iv * 1.8, 'triangle', 0.05);
+  if (atk) tone(root * 4 * Math.pow(2, sc[mS % 8] / 12), 0.1, 'square', 0.014);
+  else if (mS % 4 === 0) tone(root * 2 * Math.pow(2, sc[(mS >> 1) % 8] / 12), 0.35, 'triangle', 0.02);
+}
+
+/* =====================================================================
+   스프라이트 / 보스 얼굴
+===================================================================== */
+const HS = {};
+function heartSprite(c) {
+  if (HS[c]) return HS[c];
+  const s = document.createElement('canvas'); s.width = 7; s.height = 6;
+  const g = s.getContext('2d'); g.fillStyle = c;
+  ['.XX.XX.', 'XXXXXXX', 'XXXXXXX', '.XXXXX.', '..XXX..', '...X...']
+    .forEach((r, y) => [...r].forEach((ch, x) => { if (ch === 'X') g.fillRect(x, y, 1, 1); }));
+  return (HS[c] = s);
+}
+function drawHeart(x, y, s, c, rot = 0) {
+  ctx.save();
+  ctx.translate(Math.round(x), Math.round(y));
+  if (rot) ctx.rotate(rot);
+  ctx.drawImage(heartSprite(c), -3.5 * s, -3 * s, 7 * s, 6 * s);
+  ctx.restore();
+}
+
+const faceC = document.createElement('canvas');
+faceC.width = faceC.height = 70;
+const fx = faceC.getContext('2d');
+let hasPhoto = false;
+function placeholderFace() {
+  fx.imageSmoothingEnabled = false;
+  fx.fillStyle = '#1a0f1c'; fx.fillRect(0, 0, 70, 70);
+  fx.drawImage(heartSprite('#ff6fa8'), 9, 12, 52, 44);
+  fx.fillStyle = '#000'; fx.fillRect(24, 26, 5, 7); fx.fillRect(41, 26, 5, 7); fx.fillRect(28, 42, 14, 3);
+  fx.fillStyle = '#fff'; fx.fillRect(25, 27, 2, 2); fx.fillRect(42, 27, 2, 2);
+}
+function processPhoto(img) {
+  const t = document.createElement('canvas'); t.width = t.height = 70;
+  const g = t.getContext('2d');
+  const s = Math.min(img.width, img.height);
+  g.imageSmoothingEnabled = true;
+  g.drawImage(img, (img.width - s) / 2, (img.height - s) * 0.35, s, s, 0, 0, 70, 70);
+  const d = g.getImageData(0, 0, 70, 70), p = d.data;
+  for (let i = 0; i < p.length; i += 4) {
+    let l = (0.3 * p[i] + 0.59 * p[i + 1] + 0.11 * p[i + 2]) / 255;
+    l = clamp((l - 0.5) * 1.25 + 0.5, 0, 1);
+    const q = Math.round(l * 6) / 6;
+    p[i] = Math.min(255, q * 255 + 8);
+    p[i + 1] = q * 214 + 4;
+    p[i + 2] = q * 238 + 10;
+  }
+  fx.putImageData(d, 0, 0);
+  hasPhoto = true;
+}
+function loadFace(url, save) {
+  const im = new Image();
+  im.onload = () => {
+    processPhoto(im);
+    if (save) {
+      try {
+        const t = document.createElement('canvas'); t.width = t.height = 160;
+        const s = Math.min(im.width, im.height);
+        t.getContext('2d').drawImage(im, (im.width - s) / 2, (im.height - s) * 0.35, s, s, 0, 0, 160, 160);
+        localStorage.setItem('sunaehongFace3', t.toDataURL('image/jpeg', 0.85));
+      } catch (e) {}
+    }
+  };
+  im.src = url;
+}
+placeholderFace();
+try { const sv = localStorage.getItem('sunaehongFace3'); if (sv) loadFace(sv, false); } catch (e) {}
+
+const photoFile = document.getElementById('photoFile');
+document.getElementById('photoBtn').onclick = () => photoFile.click();
+photoFile.onchange = e => {
+  const f = e.target.files && e.target.files[0];
+  if (!f || !f.type.startsWith('image/')) return;
+  const url = URL.createObjectURL(f);
+  loadFace(url, true);
+  photoFile.value = '';
+};
+addEventListener('dragover', e => e.preventDefault());
+addEventListener('drop', e => {
+  e.preventDefault();
+  const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+  if (f && f.type.startsWith('image/')) loadFace(URL.createObjectURL(f), true);
+});
+const muteBtn = document.getElementById('muteBtn');
+function toggleMute() { muted = !muted; muteBtn.textContent = muted ? '🔇' : '🔊'; }
+muteBtn.onclick = () => { initAudio(); toggleMute(); };
+
+/* 보스 이름 입력창 */
+const nameBox = document.getElementById('nameBox'), nameInput = document.getElementById('nameInput');
+function openName() { nameInput.value = BOSS === DEF_NAME ? '' : BOSS; nameBox.hidden = false; setTimeout(() => nameInput.focus(), 0); }
+function closeName() { nameBox.hidden = true; nameInput.blur(); if (document.activeElement) document.activeElement.blur(); }
+function applyName(v) {
+  v = (v || '').trim().slice(0, 8);
+  BOSS = v || DEF_NAME;
+  document.title = BOSS + ' — 네 번째 고백';
+  try { if (v && v !== DEF_NAME) localStorage.setItem('sunaehongName', BOSS); else localStorage.removeItem('sunaehongName'); } catch (e) {}
+  closeName();
+}
+document.getElementById('nameBtn').onclick = e => { e.currentTarget.blur(); openName(); };
+document.getElementById('nameOk').onclick = () => applyName(nameInput.value);
+document.getElementById('nameReset').onclick = () => applyName('');
+document.getElementById('nameCancel').onclick = closeName;
+['keydown', 'keyup', 'keypress'].forEach(type => window.addEventListener(type, e => {
+  if (e.target !== nameInput) return;
+  e.stopImmediatePropagation();   // 이름 입력 중에는 게임 키 입력 차단
+  if (type === 'keydown' && !e.isComposing) {
+    if (e.key === 'Enter') { e.preventDefault(); applyName(nameInput.value); }
+    else if (e.key === 'Escape') { e.preventDefault(); closeName(); }
+  }
+}, true));
+
+/* =====================================================================
+   스토리 · 페이지 데이터
+===================================================================== */
+const INTRO = [
+  { text: "아주 먼 옛날,\n지하 세계의 끝에는\n'하트 정원'이 있었다." },
+  { text: "그곳에는 사랑을 너무 오래\n품고 있던 괴물이 살았다.\n\n이름은 순애홍." },
+  { text: "그는 한 사람에게 전할\n고백을 네 번 준비했다.\n\n하지만 지금까지\n끝까지 들어준 사람은 없었다." },
+  { text: "그리고 오늘,\n정원의 문이 열렸다.\n\n문 앞에 서 있는 건 — 바로 당신." }
+];
+
+const PAGES = [
+  {
+    name: '첫 번째 고백', mood: '설렘', col: '#ff7bb5', hp: 70, dmg: 4, maxHit: 34, fspd: 1.05,
+    intro: "순애홍은 얼굴이 새빨개진 채\n하트를 한 아름 안고 서 있다.\n\n떨리는 손에서 하트가\n하나둘 떨어지기 시작한다.",
+    flavor: ["순애홍이 길을 막아섰다!\n하트 향기가 코끝을 간지럽힌다.", "순애홍의 심장 소리가 여기까지 들린다.", "순애홍은 말을 꺼내려다 삼켰다.", "하트 몇 개가 바닥에서 통통 튄다."],
+    lines: ["안, 안녕하세요!\n오늘은 꼭 말할 거예요.", "하트가 막 튀어나와요...\n죄송해요!", "두근두근\n두근두근두근!", "이건 연습이에요.\n진짜 고백은 아직!"],
+    acts: [
+      { n: '살펴보기', t: 'check', r: "순애홍 - ATK 4  DEF 0\n사랑이 너무 많아 탈인 괴물.\n얼굴이 새빨갛다." },
+      { n: '인사하기', t: 'good', r: "당신은 손을 흔들었다.\n순애홍의 얼굴이 하트처럼 빨개졌다." },
+      { n: '칭찬하기', t: 'good', r: "'앞머리 멋지네요.'\n순애홍의 앞머리가 파르르 떨렸다." },
+      { n: '하트 받아주기', t: 'good', r: "날아온 하트를 두 손으로 받았다.\n순애홍이 눈물을 글썽인다." },
+      { n: '하품하기', t: 'bad', r: "당신은 크게 하품했다.\n순애홍의 하트에 금이 갔다." }
+    ],
+    spare: "순애홍은 한참 숨을 고르더니\n수줍게 웃었다.\n\n'첫 번째는 성공이죠?\n그럼 이제... 진짜 마음을 보여줄게요.'",
+    kill: "순애홍의 하트가 산산조각 났다.\n\n그런데 파편들이 바닥에서\n다시 두근두근 뛰기 시작한다.\n\n'아직... 두 번째가 남았잖아요...'"
+  },
+  {
+    name: '두 번째 고백', mood: '집착', col: '#ff4f8b', hp: 100, dmg: 5, maxHit: 40, fspd: 0.95,
+    intro: "두 번째 고백은 조금 더 간절했다.\n\n마음이 커질수록 하트에 날이 서고,\n가슴 한가운데서 거대한 포신이 솟아났다.",
+    flavor: ["순애홍의 마음에서 포신이 솟아났다.", "공기가 달콤하게 지직거린다.", "순애홍이 당신 눈을 피하지 않는다.", "포신 끝이 자꾸 당신을 향한다."],
+    lines: ["왜 대답을 안 해요?\n다시 한 번 말할게요!", "마음이 커질수록\n하트도 커져요!", "도망가지 마요.\n끝까지 들어줘요.", "사랑은 원래\n좀 아픈 거래요."],
+    acts: [
+      { n: '살펴보기', t: 'check', r: "순애홍 - ATK 5  DEF 3\n간절함이 포신이 되었다.\n포신 끝이 자꾸 당신을 향한다." },
+      { n: '눈 마주치기', t: 'good', r: "당신은 순애홍의 눈을 피하지 않았다.\n포신이 부끄러운 듯 살짝 내려갔다." },
+      { n: '고개 끄덕이기', t: 'good', r: "당신은 고개를 끄덕였다.\n'듣고 있어요.' 순애홍이 숨을 들이쉰다." },
+      { n: '같이 심호흡', t: 'good', r: "둘이 함께 크게 숨을 쉬었다.\n들썩이던 하트가 차분해졌다." },
+      { n: '휴대폰 보기', t: 'bad', r: "당신은 휴대폰을 꺼냈다.\n포신이 슬프게 지직거린다." }
+    ],
+    spare: "순애홍의 포신이 스르르 가라앉았다.\n\n'도망치지 않아 줬네요.\n세 번째는 조금... 무거울 거예요.'",
+    kill: "포신이 부서져 흩어졌다.\n\n'아파요... 그래도 괜찮아요.\n세 번째 고백이 남았으니까.'"
+  },
+  {
+    name: '세 번째 고백', mood: '상처', col: '#a58bff', hp: 130, dmg: 6, maxHit: 46, fspd: 0.85,
+    intro: "세 번째 고백.\n순애홍의 마음이 무겁게 가라앉는다.\n\n당신의 영혼이 파랗게 물들고\n중력이 발목을 붙잡는다.",
+    flavor: ["발이 무겁다. 영혼이 파랗게 물들었다.", "순애홍의 눈가가 촉촉하다.", "세 번째 고백. 기억이 마음을 짓누른다.", "하트 정원에 차가운 바람이 분다."],
+    lines: ["...세 번째예요.\n사실 두 번 다 도망쳤어요.", "마음이 무거워요.\n발이 땅에 붙은 것처럼.", "그래도 포기 못 해요.\n순애니까!", "웃어줘요.\n그것만으로 충분해요."],
+    acts: [
+      { n: '살펴보기', t: 'check', r: "순애홍 - ATK 6  DEF 6\n두 번의 아픈 기억을 안고 있다.\n마음이 무겁게 가라앉았다." },
+      { n: '괜찮다고 말하기', t: 'good', r: "'괜찮아요. 천천히 말해도 돼요.'\n순애홍의 어깨 힘이 풀렸다." },
+      { n: '손수건 건네기', t: 'good', r: "당신은 손수건을 건넸다.\n순애홍이 코를 훌쩍이며 받았다." },
+      { n: '기억 들어주기', t: 'good', r: "당신은 지난 고백 이야기를 끝까지 들었다.\n하트 조각이 하나씩 제자리를 찾는다." },
+      { n: '농담으로 넘기기', t: 'bad', r: "당신은 농담으로 넘기려 했다.\n순애홍의 표정이 굳었다." }
+    ],
+    spare: "순애홍은 손수건으로 눈가를 닦았다.\n\n'거절당한 기억이 아직 아파요.\n그래도 마지막 고백은 할래요.'",
+    kill: "하트가 또 한 번 깨졌다.\n\n'세 번이나... 거절이네요.\n그래도 마지막 한 번만, 제발.'"
+  },
+  {
+    name: '네 번째 고백', mood: '진심', col: '#ffe14a', hp: 160, dmg: 7, maxHit: 52, fspd: 0.75,
+    intro: "네 번째 고백. 이번이 마지막이다.\n\n순애홍의 모든 마음이\n한꺼번에 쏟아진다.\n\n'받아줘도, 거절해도 좋아요.\n끝까지 들어줘요.'",
+    flavor: ["모든 하트가 숨을 죽였다.", "이게 마지막 고백이다.", "순애홍은 떨면서도 웃고 있다.", "정원의 모든 꽃이 당신을 향해 고개를 돌렸다."],
+    lines: ["네 번째 고백이에요.\n이게 마지막이에요.", "내 모든 마음,\n한꺼번에 받아줘요!", "아파도 괜찮아요.\n당신이라면.", "끝까지 와줘서\n고마워요..."],
+    acts: [
+      { n: '살펴보기', t: 'check', r: "순애홍 - ATK ???  DEF ???\n모든 마음이 한꺼번에 쏟아진다.\n그래도 끝까지 웃고 있다." },
+      { n: '진심으로 대답하기', t: 'good', r: "'당신 마음, 소중히 들었어요.'\n순애홍의 눈에서 하트가 흘렀다." },
+      { n: '고맙다고 말하기', t: 'good', r: "'용기 내줘서 고마워요.'\n순애홍이 환하게 웃었다." },
+      { n: '끝까지 듣기', t: 'good', r: "당신은 한 글자도 놓치지 않고 들었다.\n하트의 맥박이 조용해진다." },
+      { n: '눈 돌리기', t: 'bad', r: "당신은 시선을 돌렸다.\n순애홍의 손이 가늘게 떨린다." }
+    ],
+    spare: '', kill: ''
+  }
+];
+
+function endingCards() {
+  const spared = G.results[3] === 'spare', k = G.kills;
+  if (spared && k === 0) return [
+    { text: "당신은 마지막 하트를\n두 손으로 받았다.\n\n순애홍의 얼굴에서\n붉은 기운이 사르르 빠져나갔다." },
+    { text: "순애홍: '...받아줘서 고마워요.\n대답을 듣지 못해도 괜찮아요.\n들어줬다는 게 전부예요.'" },
+    { text: "당신은 대답 대신 손을 내밀었다.\n\n'친구부터 시작하는 건 어때요?'" },
+    { text: "하트 정원에 꽃이 피었다.\n\n순애홍의 네 번째 고백은\n끝이 아니라 새로운 이야기의\n첫 장이 되었다." },
+    { title: 'TRUE END', big: 1, tc: '#ffe14a', sub: '순애홍과 친구가 되었다', text: "♥ 플레이해 주셔서 감사합니다 ♥\n\nZ / 클릭 : 처음으로", end: true }
+  ];
+  if (spared) return [
+    { text: "당신은 마지막 하트를 받아냈다.\n\n하지만 이전의 상처는\n지워지지 않았다." },
+    { text: "순애홍: '괜찮아요... 이번에는\n끝까지 들어줬으니까.'\n\n조각난 하트를 하나씩 주워 담고\n순애홍은 조용히 정원으로 돌아갔다." },
+    { title: 'NORMAL END', big: 1, tc: '#ffffff', sub: '마음은 전해졌지만, 상처는 남았다', text: "Z / 클릭 : 처음으로", end: true }
+  ];
+  if (k < 4) return [
+    { text: "마지막 하트가 산산조각 났다.\n\n파편은 더 이상 뛰지 않았다." },
+    { text: "정원은 고요하다.\n\n고백을 해줄 사람도,\n받아줄 사람도 이제 없다." },
+    { title: 'BAD END', big: 1, tc: '#ff4a6e', sub: '네 번째 고백은 끝내 전해지지 않았다', text: "Z / 클릭 : 처음으로", end: true }
+  ];
+  return [
+    { text: "하트 정원에는\n아무도 남지 않았다.\n\n당신의 LV는 19.\n사랑을 모두 부숴버린 대가다." },
+    { text: "바람 소리만 들린다.\n\n...다섯 번째 고백은 없었다." },
+    { title: 'MURDER END', big: 1, tc: '#ff2b3a', sub: 'LV 19 — 아무도 남지 않았다', text: "Z / 클릭 : 처음으로", end: true }
+  ];
+}
+
+/* =====================================================================
+   상태
+===================================================================== */
+const MENU_BOX = { x: 32, y: 204, w: 576, h: 156 };
+function newState() {
+  return {
+    scene: 'title', bs: 'say', t: 0, page: 0,
+    hp: 30, maxHp: 30,
+    items: [{ n: '하트 쿠키', heal: 12 }, { n: '하트 쿠키', heal: 12 }, { n: '핑크 초콜릿', heal: 20 }, { n: '딸기 사탕', heal: 8 }],
+    mercy: 0, kills: 0, results: [],
+    bossHp: 1, bossMax: 1, bossHpDisp: 1, hpShow: 0, shake: 0, pShake: 0, flash: 0, redFlash: 0,
+    sel: 0, subSel: 0, sub: null, list: [],
+    dlg: null, bubble: null, turnIdx: 0, turn: null,
+    soul: { x: 320, y: 285, vy: 0, blue: false, inv: 0, show: false },
+    box: { ...MENU_BOX }, tb: { ...MENU_BOX },
+    fight: null, cards: null, snap: null, acted: {}, pop: null, dying: null, t2: 0, overT: 0, click: []
+  };
+}
+let G = newState();
+const HB = [], AR = [], BL = [], PART = [];
+const BGH = Array.from({ length: 28 }, () => ({ x: Math.random() * W, y: Math.random() * H, s: rand(1, 2.4), v: rand(8, 26) }));
+
+/* =====================================================================
+   입력
+===================================================================== */
+const KM = {
+  KeyZ: 'z', Enter: 'z', NumpadEnter: 'z', KeyX: 'x', ShiftLeft: 'x', ShiftRight: 'x', Escape: 'x',
+  ArrowUp: 'up', KeyW: 'up', ArrowDown: 'down', KeyS: 'down', ArrowLeft: 'left', KeyA: 'left',
+  ArrowRight: 'right', KeyD: 'right', Space: 'jump', KeyM: 'm'
+};
+const keys = new Set(), pressed = new Set();
+const held = k => keys.has(k), hit = k => pressed.has(k);
+const conf = () => pressed.has('z') || pressed.has('jump');
+const canc = () => pressed.has('x');
+addEventListener('keydown', e => {
+  const k = KM[e.code]; if (!k) return;
+  e.preventDefault(); initAudio();
+  if (!keys.has(k)) { pressed.add(k); if (k === 'm') toggleMute(); }
+  keys.add(k);
+});
+addEventListener('keyup', e => { const k = KM[e.code]; if (k) keys.delete(k); });
+addEventListener('blur', () => keys.clear());
+
+const PTR = { down: false, x: 0, y: 0, x0: 0, y0: 0, sx: 0, sy: 0, jumpT: 0 };
+const clicks = [];
+function toCanvas(e) { const r = cv.getBoundingClientRect(); return { x: (e.clientX - r.left) * W / r.width, y: (e.clientY - r.top) * H / r.height }; }
+cv.addEventListener('pointerdown', e => {
+  e.preventDefault(); initAudio();
+  const p = toCanvas(e);
+  try { cv.setPointerCapture(e.pointerId); } catch (_) {}
+  clicks.push(p);
+  PTR.down = true; PTR.x = PTR.x0 = p.x; PTR.y = PTR.y0 = p.y; PTR.sx = G.soul.x; PTR.sy = G.soul.y; PTR.jumpT = 0.22;
+});
+cv.addEventListener('pointermove', e => { if (!PTR.down) return; const p = toCanvas(e); PTR.x = p.x; PTR.y = p.y; });
+cv.addEventListener('pointerup', () => { PTR.down = false; });
+cv.addEventListener('pointercancel', () => { PTR.down = false; });
+function processClicks() {
+  for (const p of clicks) {
+    let used = false;
+    for (let i = G.click.length - 1; i >= 0; i--) {
+      const c = G.click[i];
+      if (p.x >= c.x && p.x <= c.x + c.w && p.y >= c.y && p.y <= c.y + c.h) { c.fn(); used = true; break; }
+    }
+    if (!used && (G.scene !== 'battle' || ['say', 'bossSay', 'fight'].includes(G.bs))) pressed.add('z');
+  }
+  clicks.length = 0;
+}
+
+/* =====================================================================
+   텍스트 도우미
+===================================================================== */
+function font(px) { ctx.font = `${px}px ${FONT}`; }
+function txt(s, x, y, px, col, al) { font(px); ctx.fillStyle = col || '#fff'; ctx.textAlign = al || 'left'; ctx.textBaseline = 'top'; ctx.fillText(s, x, y); }
+function wrapLines(s, maxW) {
+  const out = [];
+  for (const para of s.split('\n')) {
+    let line = '';
+    for (const ch of para) {
+      const t = line + ch;
+      if (ctx.measureText(t).width > maxW && line) { out.push(line); line = ch === ' ' ? '' : ch; } else line = t;
+    }
+    out.push(line);
+  }
+  return out;
+}
+function newTyper(text) { return { text, n: 0, acc: 0, done: text.length === 0 }; }
+function typerUpdate(t, dt, speed) {
+  if (t.done) return;
+  t.acc += dt * (speed || 36);
+  while (t.acc >= 1 && t.n < t.text.length) {
+    t.acc -= 1; t.n++;
+    const c = t.text[t.n - 1];
+    if (c !== ' ' && c !== '\n' && t.n % 2 === 0) sfx.blip();
+  }
+  if (t.n >= t.text.length) t.done = true;
+}
+function bar(x, y, w, h, r, col, bg) {
+  ctx.fillStyle = bg || '#333'; ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = col; ctx.fillRect(x, y, Math.round(w * clamp(r, 0, 1)), h);
+}
+
+/* =====================================================================
+   카드(스토리) 장면
+===================================================================== */
+function showCards(list, after) {
+  G.scene = 'cards';
+  G.cards = { list, i: 0, after, ty: newTyper(list[0].text || '') };
+}
+function updateCards(dt) {
+  const c = G.cards, cur = c.list[c.i];
+  typerUpdate(c.ty, dt, 30);
+  if (conf()) {
+    if (!c.ty.done) { c.ty.n = c.ty.text.length; c.ty.done = true; return; }
+    sfx.select();
+    if (cur.end) { resetAll(); return; }
+    c.i++;
+    if (c.i >= c.list.length) { const f = c.after; c.after = null; if (f) f(); }
+    else c.ty = newTyper(c.list[c.i].text || '');
+  }
+}
+function drawBgHearts(alpha) {
+  for (const h of BGH) drawHeartA(h.x, h.y, h.s, '#ff7bb5', alpha);
+}
+function drawHeartA(x, y, s, c, a) { ctx.globalAlpha = a; drawHeart(x, y, s, c); ctx.globalAlpha = 1; }
+function drawCards() {
+  drawBgHearts(0.18);
+  const c = G.cards, cur = c.list[c.i];
+  let y = 150;
+  if (cur.title) {
+    txt(cur.title, 320, cur.big ? 90 : 110, cur.big ? 44 : 26, cur.tc || '#ffe14a', 'center');
+    if (cur.sub) txt(cur.sub, 320, cur.big ? 150 : 150, 18, cur.tc || '#ff9cc7', 'center');
+    y = 210;
+  }
+  font(20);
+  const lines = wrapLines(c.ty.text.slice(0, c.ty.n), 480);
+  lines.forEach((l, i) => txt(l, cur.title ? 320 : 100, y + i * 32, 20, '#fff', cur.title ? 'center' : 'left'));
+  if (c.ty.done && Math.floor(G.t * 2) % 2 === 0) txt('▼', 320, 440, 16, '#888', 'center');
+}
+
+/* =====================================================================
+   타이틀
+===================================================================== */
+function drawTitle() {
+  drawBgHearts(0.22);
+  txt('순애홍', 320, 40, 64, '#ffffff', 'center');
+  txt('순애홍', 323, 43, 64, 'rgba(255,92,154,.45)', 'center');
+  txt('— 네 번째 고백 —', 320, 118, 20, '#ff9cc7', 'center');
+  const fy = 160 + Math.sin(G.t * 2) * 3;
+  ctx.drawImage(faceC, 250, fy, 140, 140);
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 4; ctx.strokeRect(248, fy - 2, 144, 144);
+  for (let i = 0; i < 6; i++) {
+    const a = G.t * 0.9 + i * 1.047;
+    drawHeart(320 + Math.cos(a) * 120, fy + 70 + Math.sin(a) * 78, 1.6, i % 2 ? '#ff7bb5' : '#fff');
+  }
+  if (Math.floor(G.t * 2) % 2 === 0) txt('Z / Enter / 클릭 으로 시작', 320, 332, 20, '#ffe14a', 'center');
+  txt(hasPhoto ? '보스 사진이 적용되었습니다 ♥' : '오른쪽 위 [📷 보스 사진] 버튼으로 보스 얼굴을 바꿀 수 있어요', 320, 366, 12, hasPhoto ? '#9eeaa5' : '#ff9cc7', 'center');
+  txt('이동: 방향키 / WASD    확인: Z·Enter·Space    취소/천천히: X·Shift    소리: M', 320, 398, 12, '#888', 'center');
+  txt('파란 영혼일 때는 ↑ / W / Space 로 점프!   터치: 드래그 이동 · 탭 점프', 320, 416, 12, '#888', 'center');
+}
+
+/* =====================================================================
+   게임 흐름
+===================================================================== */
+function resetAll() {
+  G = newState(); HB.length = AR.length = BL.length = PART.length = 0;
+}
+function startGame() {
+  sfx.select();
+  showCards(INTRO, () => startPage(0));
+}
+function startPage(p) {
+  G.page = p;
+  const pg = PAGES[p];
+  showCards([{ title: `PAGE ${p + 1} / 4`, sub: `${pg.name} 〈${pg.mood}〉`, tc: pg.col, big: 1, text: pg.intro }], () => beginBattle(false));
+}
+function beginBattle(retry) {
+  const p = PAGES[G.page];
+  G.scene = 'battle';
+  G.bossMax = p.hp; G.bossHp = p.hp; G.bossHpDisp = p.hp; G.hpShow = 0;
+  G.mercy = 0; G.turnIdx = 0; G.acted = {}; G.dying = null; G.pop = null; G.sel = 0;
+  G.soul.show = false; G.soul.inv = 0;
+  HB.length = AR.length = BL.length = 0;
+  if (retry) { G.items = G.snap.items.map(i => ({ ...i })); G.hp = G.maxHp; }
+  else G.snap = { items: G.items.map(i => ({ ...i })) };
+  G.box = { ...MENU_BOX }; G.tb = { ...MENU_BOX };
+  say([p.flavor[0]], toMenu);
+}
+function toMenu() { G.bs = 'menu'; G.sub = null; G.tb = { ...MENU_BOX }; }
+function say(pages, cb) {
+  G.tb = { ...MENU_BOX };
+  const ps = pages.map(p => p.split('\n').map(l => '* ' + l).join('\n'));
+  G.dlg = { pages: ps, i: 0, cb: cb || toMenu, ty: newTyper(ps[0]) };
+  G.bs = 'say';
+}
+function updateDlg(dt) {
+  const d = G.dlg;
+  typerUpdate(d.ty, dt, 40);
+  if (conf()) {
+    if (!d.ty.done) { d.ty.n = d.ty.text.length; d.ty.done = true; }
+    else if (d.i < d.pages.length - 1) { d.i++; d.ty = newTyper(d.pages[d.i]); }
+    else { const cb = d.cb; d.cb = null; if (cb) cb(); }
+  }
+}
+
+/* ---- 메뉴 ---- */
+function menuConfirm() {
+  sfx.select();
+  const p = PAGES[G.page];
+  if (G.sel === 0) { G.bs = 'fight'; G.fight = { pos: 0, stopped: false, t: 0 }; }
+  else if (G.sel === 1) {
+    G.sub = 'act'; G.subSel = 0; G.bs = 'sub';
+    G.list = p.acts.map(a => ({ n: a.n, a }));
+  } else if (G.sel === 2) {
+    if (!G.items.length) { say(['가지고 있는 아이템이 없다.'], toMenu); return; }
+    G.sub = 'item'; G.subSel = 0; G.bs = 'sub';
+    G.list = G.items.map((it, i) => ({ n: `${it.n} +${it.heal}`, idx: i }));
+  } else {
+    G.sub = 'mercy'; G.subSel = 0; G.bs = 'sub';
+    G.list = [{ n: '용서하기', y: G.mercy >= 100 }, { n: '도망치기' }];
+  }
+}
+function subPick(i) {
+  sfx.select();
+  const it = G.list[i];
+  if (G.sub === 'act') doAct(it.a);
+  else if (G.sub === 'item') useItem(it.idx);
+  else if (i === 0) {
+    if (G.mercy >= 100) startDying('spare');
+    else say(['용서를 시도했다.', '하지만 순애홍은 아직\n마음을 다 전하지 못했다...'], endPlayerTurn);
+  } else say(['도망치려 했지만\n하트가 발목을 휘감았다.'], endPlayerTurn);
+}
+function doAct(a) {
+  let t = a.r;
+  if (a.t === 'good') {
+    if (!G.acted[a.n]) {
+      G.acted[a.n] = 1; G.mercy = Math.min(100, G.mercy + 34); sfx.heal();
+      t += G.mercy >= 100 ? '\n마음이 가득 찼다! 용서할 수 있다.' : '\n순애홍의 마음이 열린다. (마음 +34)';
+    } else t = '이미 해 본 행동이다.\n순애홍은 고개를 갸웃했다.';
+  } else if (a.t === 'bad') { G.mercy = Math.max(0, G.mercy - 34); t += '\n(마음 -34)'; sfx.hit(); }
+  say([t], endPlayerTurn);
+}
+function useItem(idx) {
+  const it = G.items.splice(idx, 1)[0];
+  const before = G.hp;
+  G.hp = Math.min(G.maxHp, G.hp + it.heal); sfx.heal();
+  say([`${it.n}을(를) 먹었다.\n${G.hp >= G.maxHp ? 'HP가 가득 찼다!' : `HP가 ${G.hp - before} 회복되었다!`}`], endPlayerTurn);
+}
+
+/* ---- 공격(FIGHT) ---- */
+function resolveFight() {
+  const f = G.fight, p = PAGES[G.page];
+  if (f.miss) { G.pop = { t: 0, s: 'MISS', c: '#ffffff' }; G.bs = 'result'; G.t2 = 0; return; }
+  const a = 1 - Math.abs(f.pos - 0.5) * 2;
+  let dmg = Math.round(p.maxHit * (0.2 + 0.8 * Math.pow(a, 1.3)));
+  if (a > 0.92) dmg = Math.round(dmg * 1.25);
+  f.dmg = Math.max(1, dmg);
+  G.bs = 'slash'; G.t2 = 0; sfx.slash();
+}
+function applyDamage() {
+  const f = G.fight;
+  G.bossHp = Math.max(0, G.bossHp - f.dmg);
+  G.mercy = Math.max(0, G.mercy - 30);
+  G.pop = { t: 0, s: String(f.dmg), c: '#ff4a6e' };
+  G.shake = 0.6; G.hpShow = 2.2; sfx.hit();
+  G.bs = 'result'; G.t2 = 0;
+}
+
+/* ---- 보스 차례 ---- */
+function makeTurn() {
+  const pool = POOL[G.page], spec = pool[G.turnIdx % pool.length];
+  G.turnIdx++;
+  const [w, h] = spec.box;
+  return {
+    tb: { x: 320 - w / 2, y: 285 - h / 2, w, h }, si: 0,
+    segs: spec.segs.map(s => ({ dur: s.dur, blue: !!s.blue, m: s.m, t: 0, fns: null }))
+  };
+}
+function endPlayerTurn() {
+  const p = PAGES[G.page];
+  G.sub = null;
+  G.turn = makeTurn();
+  G.tb = { ...G.turn.tb };
+  const line = p.lines[(G.turnIdx - 1) % p.lines.length];
+  font(16);
+  G.bubble = { text: line, ty: newTyper(line), wait: 0, n: wrapLines(line, 196).length };
+  const S = G.soul, tb = G.turn.tb;
+  S.x = tb.x + tb.w / 2;
+  S.blue = !!G.turn.segs[0].blue;
+  S.y = S.blue ? tb.y + tb.h - 9 : tb.y + tb.h / 2;
+  S.vy = 0; S.show = true; S.inv = 0.5;
+  G.bs = 'bossSay';
+}
+function startAttack() {
+  G.bubble = null; HB.length = AR.length = BL.length = 0;
+  G.bs = 'attack'; G.turn.si = 0; startSeg();
+}
+function startSeg() {
+  const T = G.turn, seg = T.segs[T.si], first = T.si === 0;
+  seg.t = 0;
+  seg.fns = seg.m.map(n => MOD[n](G.page, T.tb));
+  if (!first) { sfx.swap(); G.flash = 0.18; }
+  setBlue(seg.blue, !first);
+}
+function setBlue(b, slam) {
+  const S = G.soul; S.blue = b; S.vy = b && slam ? 260 : 0;
+}
+function endAttack() {
+  HB.length = AR.length = BL.length = 0;
+  G.soul.show = false;
+  if (G.hp <= 0) return;
+  const p = PAGES[G.page];
+  let t = p.flavor[Math.floor(Math.random() * p.flavor.length)];
+  if (G.mercy >= 100) t = '순애홍이 공격을 멈추고 기다린다.\n이제 용서할 수 있을 것 같다.';
+  say([t], toMenu);
+}
+
+/* ---- 피격 · 사망 ---- */
+function hurt() {
+  const S = G.soul;
+  if (S.inv > 0 || G.bs !== 'attack') return;
+  G.hp = Math.max(0, G.hp - PAGES[G.page].dmg);
+  S.inv = 1.0; sfx.hit(); G.pShake = 0.22; G.redFlash = 0.12;
+  if (G.hp <= 0) die();
+}
+function die() {
+  G.bs = 'dead'; G.t2 = 0;
+  for (let i = 0; i < 7; i++) {
+    const a = (i / 7) * 6.283 + Math.random();
+    PART.push({ x: G.soul.x, y: G.soul.y, vx: Math.cos(a) * 110, vy: Math.sin(a) * 110 - 60, l: 0, m: 1.6, c: '#ff2b3a', s: 1, g: 280 });
+  }
+  sfx.shatter();
+}
+function startDying(type) {
+  G.dying = { t: 0, type, spawned: false }; G.bs = 'dying'; G.soul.show = false;
+  if (type === 'spare') sfx.heal();
+}
+function finishPage(type) {
+  G.dying = null;
+  const p = PAGES[G.page];
+  G.results[G.page] = type;
+  if (type === 'kill') G.kills++;
+  if (G.page === 3) { showCards(endingCards(), null); return; }
+  G.hp = Math.min(G.maxHp, G.hp + 10);
+  showCards([{
+    title: type === 'spare' ? '♥ SPARE' : '✕ BREAK', tc: type === 'spare' ? '#ffe14a' : '#ff4a6e',
+    text: (type === 'spare' ? p.spare : p.kill) + '\n\n(HP가 조금 회복되었다)'
+  }], () => { G.page++; startPage(G.page); });
+}
+
+/* =====================================================================
+   공격 패턴 (하트 · 블래스터 · 화살 · 파란 영혼)
+===================================================================== */
+function addHeart(x, y, vx, vy, s, o) { HB.push(Object.assign({ x, y, vx, vy, s: s || 1.8, age: 0, rot: 0 }, o || {})); }
+function addArrow(x, dir, h, vx) { AR.push({ x, dir, h, vx }); }
+function addBlaster(kind, delay, d, tb) {
+  const S = G.soul, cx = tb.x + tb.w / 2, cy = tb.y + tb.h / 2;
+  let x, y, a, charge = [0.95, 0.85, 0.78, 0.7][d], hw = [15, 17, 19, 21][d];
+  if (kind === 'h') {
+    const l = Math.random() < 0.5; x = l ? tb.x - 60 : tb.x + tb.w + 60; y = clamp(S.y, tb.y + 12, tb.y + tb.h - 12); a = l ? 0 : Math.PI;
+  } else if (kind === 'v') {
+    x = clamp(S.x, tb.x + 12, tb.x + tb.w - 12); y = tb.y - 60; a = Math.PI / 2;
+  } else if (kind === 'floor') {
+    const l = Math.random() < 0.5; x = l ? tb.x - 60 : tb.x + tb.w + 60; y = tb.y + tb.h - 11; a = l ? 0 : Math.PI; hw = 11; charge = 0.85 - d * 0.04;
+  } else {
+    const th = rand(-3.4, 0.25);
+    x = cx + Math.cos(th) * 200; y = cy + Math.sin(th) * 170;
+    a = Math.atan2(S.y - y, S.x - x);
+  }
+  BL.push({ x, y, a, hw, charge, fire: 0.5, t: -delay, w: 0, snd: false, fired: false });
+}
+
+const MOD = {
+  rain: (d, tb, mult) => {
+    let c = 0.2; const gap = [0.32, 0.26, 0.21, 0.17][d] * (mult || 1);
+    return dt => {
+      c -= dt;
+      if (c <= 0) {
+        c = gap * (0.7 + Math.random() * 0.6);
+        addHeart(tb.x + 10 + Math.random() * (tb.w - 20), tb.y - 24, (Math.random() - 0.5) * 36, 100 + d * 22 + Math.random() * 34, 1.6 + Math.random() * 0.5);
+      }
+    };
+  },
+  blueRain: (d, tb) => MOD.rain(d, tb, 1.9),
+  ring: (d, tb) => {
+    let c = 0.1; const gap = [1.6, 1.4, 1.2, 1.05][d], n = [8, 10, 12, 14][d];
+    return dt => {
+      c -= dt;
+      if (c <= 0) {
+        c = gap;
+        const ox = tb.x + tb.w * (0.2 + Math.random() * 0.6), oy = tb.y - 36, off = Math.random() * 6.28, sp = 80 + d * 10;
+        for (let i = 0; i < n; i++) { const a = off + i * 6.2832 / n; addHeart(ox, oy, Math.cos(a) * sp, Math.sin(a) * sp, 1.8); }
+        sfx.tick();
+      }
+    };
+  },
+  fan: (d, tb) => {
+    let c = 0; const rate = [0.12, 0.1, 0.085, 0.075][d];
+    return (dt, t) => {
+      c -= dt;
+      if (c <= 0) {
+        c = rate; const sp = 105 + d * 10;
+        let ang = Math.PI / 2 + Math.sin(t * 1.7) * 1.0;
+        addHeart(tb.x + tb.w / 2, tb.y - 30, Math.cos(ang) * sp, Math.sin(ang) * sp, 1.7);
+        if (d >= 3) { ang = Math.PI / 2 + Math.sin(t * 1.7 + Math.PI) * 1.0; addHeart(tb.x + tb.w / 2, tb.y - 30, Math.cos(ang) * sp, Math.sin(ang) * sp, 1.7); }
+      }
+    };
+  },
+  homing: (d, tb) => {
+    let c = 0.4; const gap = [1.2, 1.0, 0.85, 0.75][d];
+    return dt => {
+      c -= dt;
+      if (c <= 0) {
+        c = gap;
+        const side = Math.floor(Math.random() * 4); let x, y;
+        if (side === 0) { x = tb.x - 24; y = tb.y + Math.random() * tb.h; }
+        else if (side === 1) { x = tb.x + tb.w + 24; y = tb.y + Math.random() * tb.h; }
+        else { x = tb.x + Math.random() * tb.w; y = tb.y - 26; }
+        const sp = 112 + d * 8, a = Math.atan2(G.soul.y - y, G.soul.x - x);
+        addHeart(x, y, Math.cos(a) * sp, Math.sin(a) * sp, 2.2, { home: 1.1, sp });
+      }
+    };
+  },
+  wall: (d, tb) => {
+    let c = 0.3, side = 0; const gap = [1.9, 1.7, 1.5, 1.35][d];
+    return dt => {
+      c -= dt;
+      if (c <= 0) {
+        c = gap; side ^= 1;
+        const rows = Math.floor((tb.h - 8) / 20), gs = Math.floor(Math.random() * (rows - 2));
+        for (let i = 0; i < rows; i++) {
+          if (i >= gs && i < gs + 2) continue;
+          addHeart(side ? tb.x - 18 : tb.x + tb.w + 18, tb.y + 14 + i * 20, (side ? 1 : -1) * (120 + d * 14), 0, 1.8);
+        }
+        sfx.tick();
+      }
+    };
+  },
+  blasters: (d, tb) => {
+    let c = 0.2; const gap = [2.3, 2.1, 1.9, 1.75][d], n = [1, 2, 2, 3][d];
+    return dt => {
+      c -= dt;
+      if (c <= 0) {
+        c = gap;
+        const kinds = ['aim', 'aim', 'h', 'v'];
+        for (let i = 0; i < n; i++) addBlaster(i === 0 ? 'aim' : kinds[Math.floor(Math.random() * 4)], i * 0.3, d, tb);
+      }
+    };
+  },
+  floorBeam: (d, tb) => {
+    let c = 1.2; const gap = [2.8, 2.6, 2.4, 2.1][d];
+    return dt => { c -= dt; if (c <= 0) { c = gap; addBlaster('floor', 0, d, tb); } };
+  },
+  arrows: (d, tb) => {
+    let c = 0.5; const gap = [1.2, 1.05, 0.92, 0.82][d], sp = 130 + d * 24;
+    return dt => {
+      c -= dt;
+      if (c <= 0) {
+        c = gap * (0.9 + Math.random() * 0.3);
+        const pat = Math.floor(Math.random() * (d >= 2 ? 5 : 3)), left = Math.random() < 0.5;
+        const x0 = left ? tb.x - 14 : tb.x + tb.w + 14, v = (left ? 1 : -1) * sp, sg = left ? -1 : 1;
+        const A = (dx, dir, h) => addArrow(x0 + sg * dx, dir, h, v);
+        if (pat === 0) A(0, 'up', 26);
+        else if (pat === 1) { A(0, 'up', 26); A(26, 'up', 26); }
+        else if (pat === 2) { A(0, 'up', 26); A(50, 'up', 26); A(100, 'up', 26); }
+        else if (pat === 3) { A(0, 'down', 74); A(70, 'up', 26); }
+        else { A(0, 'up', 34); A(60, 'down', 66); A(100, 'up', 26); }
+      }
+    };
+  }
+};
+
+const POOL = [
+  [
+    { box: [200, 150], segs: [{ dur: 8, m: ['rain'] }] },
+    { box: [220, 150], segs: [{ dur: 9, m: ['rain', 'ring'] }] },
+    { box: [220, 150], segs: [{ dur: 9, m: ['fan', 'ring'] }] },
+    { box: [230, 150], segs: [{ dur: 9, m: ['homing', 'rain'] }] }
+  ],
+  [
+    { box: [230, 150], segs: [{ dur: 10, m: ['blasters', 'rain'] }] },
+    { box: [230, 150], segs: [{ dur: 10, m: ['ring', 'homing'] }] },
+    { box: [240, 150], segs: [{ dur: 10, m: ['fan', 'blasters'] }] },
+    { box: [240, 150], segs: [{ dur: 10, m: ['wall', 'rain'] }] }
+  ],
+  [
+    { box: [300, 150], segs: [{ dur: 11, blue: 1, m: ['arrows', 'blueRain'] }] },
+    { box: [250, 160], segs: [{ dur: 11, m: ['wall', 'homing', 'blasters'] }] },
+    { box: [300, 150], segs: [{ dur: 11, blue: 1, m: ['arrows', 'floorBeam'] }] },
+    { box: [250, 160], segs: [{ dur: 11, m: ['fan', 'ring', 'homing'] }] }
+  ],
+  [
+    { box: [280, 150], segs: [{ dur: 5, m: ['fan', 'ring'] }, { dur: 7, blue: 1, m: ['arrows', 'floorBeam', 'blueRain'] }] },
+    { box: [260, 150], segs: [{ dur: 11, m: ['blasters', 'wall'] }] },
+    { box: [280, 150], segs: [{ dur: 5, m: ['homing', 'blasters'] }, { dur: 7, blue: 1, m: ['arrows', 'floorBeam'] }] },
+    { box: [290, 160], segs: [{ dur: 12, m: ['fan', 'blasters', 'homing'] }] }
+  ]
+];
+
+/* ---- 영혼 이동 ---- */
+function moveSoul(dt) {
+  const S = G.soul, b = G.box, hs = 7;
+  const L = b.x + hs + 2, R = b.x + b.w - hs - 2, T = b.y + hs + 2, Bt = b.y + b.h - hs - 2;
+  const sp = 135 * (held('x') ? 0.5 : 1);
+  let dx = (held('right') ? 1 : 0) - (held('left') ? 1 : 0);
+  let dy = (held('down') ? 1 : 0) - (held('up') ? 1 : 0);
+  if (PTR.jumpT > 0) PTR.jumpT -= dt;
+  if (!dx && !dy && PTR.down) {
+    const tx = PTR.sx + (PTR.x - PTR.x0), ty = PTR.sy + (PTR.y - PTR.y0);
+    dx = clamp((tx - S.x) / 8, -1, 1); dy = clamp((ty - S.y) / 8, -1, 1);
+  }
+  if (!S.blue) {
+    const m = Math.hypot(dx, dy); if (m > 1) { dx /= m; dy /= m; }
+    S.x += dx * sp * dt; S.y += dy * sp * dt;
+  } else {
+    S.x += clamp(dx, -1, 1) * sp * dt;
+    const jumpHeld = held('up') || held('jump') || held('z') || PTR.jumpT > 0;
+    const onFloor = S.y >= Bt - 0.5;
+    if (onFloor && jumpHeld) S.vy = -340;
+    if (!jumpHeld && S.vy < -140) S.vy = -140;
+    S.vy = Math.min(520, S.vy + 900 * dt + (held('down') ? 900 * dt : 0));
+    S.y += S.vy * dt;
+    if (S.y >= Bt) { S.y = Bt; S.vy = 0; }
+    if (S.y < T) { S.y = T; S.vy = Math.max(S.vy, 0); }
+  }
+  S.x = clamp(S.x, L, R); S.y = clamp(S.y, T, Bt);
+}
+
+/* ---- 공격 업데이트 ---- */
+function updateAttack(dt) {
+  const S = G.soul, b = G.box;
+  S.inv = Math.max(0, S.inv - dt);
+  moveSoul(dt);
+
+  for (let i = HB.length - 1; i >= 0; i--) {
+    const h = HB[i]; h.age += dt;
+    if (h.home > 0) {
+      h.home -= dt;
+      const want = Math.atan2(S.y - h.y, S.x - h.x), cur = Math.atan2(h.vy, h.vx);
+      const da = (((want - cur + Math.PI * 3) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2) - Math.PI;
+      const na = cur + clamp(da, -2.4 * dt, 2.4 * dt);
+      h.vx = Math.cos(na) * h.sp; h.vy = Math.sin(na) * h.sp;
+    }
+    h.x += h.vx * dt; h.y += h.vy * dt; h.rot += dt * 2;
+    if (h.age > 0.4 && (h.x < b.x - 90 || h.x > b.x + b.w + 90 || h.y < b.y - 90 || h.y > b.y + b.h + 22)) { HB.splice(i, 1); continue; }
+    if (Math.hypot(h.x - S.x, h.y - S.y) < h.s * 2.7 + 3.6) hurt();
+  }
+  const fl = b.y + b.h;
+  for (let i = AR.length - 1; i >= 0; i--) {
+    const a = AR[i]; a.x += a.vx * dt;
+    if (a.x < b.x - 60 || a.x > b.x + b.w + 60) { AR.splice(i, 1); continue; }
+    const y0 = a.dir === 'up' ? fl - a.h : b.y, y1 = a.dir === 'up' ? fl : b.y + a.h;
+    if (S.x + 3.5 > a.x - 6 && S.x - 3.5 < a.x + 6 && S.y + 3.5 > y0 && S.y - 3.5 < y1) hurt();
+  }
+  for (let i = BL.length - 1; i >= 0; i--) {
+    const bl = BL[i]; bl.t += dt;
+    if (bl.t < 0) continue;
+    if (!bl.snd) { bl.snd = true; sfx.charge(); }
+    const end = bl.charge + bl.fire;
+    if (bl.t >= bl.charge && bl.t < end) {
+      if (!bl.fired) { bl.fired = true; sfx.beam(); G.pShake = Math.max(G.pShake, 0.12); }
+      const k = Math.min(1, (bl.t - bl.charge) / 0.06) * Math.min(1, (end - bl.t) / 0.1);
+      bl.w = bl.hw * k;
+      if (bl.w > bl.hw * 0.5) {
+        const dx = S.x - bl.x, dy = S.y - bl.y, c = Math.cos(bl.a), s = Math.sin(bl.a);
+        const along = dx * c + dy * s, perp = Math.abs(-dx * s + dy * c);
+        if (along > 0 && perp < bl.w + 2) hurt();
+      }
+    }
+    if (bl.t > end + 0.25) BL.splice(i, 1);
+  }
+  if (G.bs !== 'attack') return;
+
+  const T = G.turn, seg = T.segs[T.si];
+  seg.t += dt;
+  const st = seg.t - 0.6;
+  if (st >= 0) seg.fns.forEach(f => f(dt, st));
+  if (seg.t >= seg.dur) {
+    T.si++;
+    if (T.si >= T.segs.length) endAttack(); else startSeg();
+  }
+}
+
+/* =====================================================================
+   업데이트
+===================================================================== */
+function updateBattle(dt) {
+  const k = Math.min(1, dt * 12);
+  for (const q of ['x', 'y', 'w', 'h']) {
+    G.box[q] += (G.tb[q] - G.box[q]) * k;
+    if (Math.abs(G.tb[q] - G.box[q]) < 0.4) G.box[q] = G.tb[q];
+  }
+  G.bossHpDisp += (G.bossHp - G.bossHpDisp) * Math.min(1, dt * 5);
+  G.hpShow = Math.max(0, G.hpShow - dt);
+  G.shake = Math.max(0, G.shake - dt);
+  G.pShake = Math.max(0, G.pShake - dt);
+  G.redFlash = Math.max(0, G.redFlash - dt);
+  G.flash = Math.max(0, G.flash - dt);
+  if (G.pop) { G.pop.t += dt; if (G.pop.t > 1.3) G.pop = null; }
+
+  switch (G.bs) {
+    case 'say': updateDlg(dt); break;
+    case 'menu': {
+      let s = G.sel;
+      if (hit('right')) s = (s + 1) % 4;
+      if (hit('left')) s = (s + 3) % 4;
+      if (s !== G.sel) { G.sel = s; sfx.move(); }
+      if (conf()) menuConfirm();
+      break;
+    }
+    case 'sub': {
+      const n = G.list.length; let i = G.subSel;
+      if (hit('right') && i % 2 === 0 && i + 1 < n) i++;
+      else if (hit('left') && i % 2 === 1) i--;
+      else if (hit('down') && i + 2 < n) i += 2;
+      else if (hit('up') && i - 2 >= 0) i -= 2;
+      if (i !== G.subSel) { G.subSel = i; sfx.move(); }
+      if (conf()) subPick(G.subSel);
+      else if (canc()) toMenu();
+      break;
+    }
+    case 'fight': {
+      const f = G.fight, p = PAGES[G.page];
+      if (!f.stopped) {
+        f.pos += dt / p.fspd;
+        if (conf()) { f.stopped = true; f.t = 0; sfx.select(); }
+        else if (f.pos >= 1) { f.stopped = true; f.miss = true; f.pos = 1; f.t = 0; }
+      } else { f.t += dt; if (f.t > 0.35) resolveFight(); }
+      break;
+    }
+    case 'slash': G.t2 += dt; if (G.t2 >= 0.5) applyDamage(); break;
+    case 'result':
+      G.t2 += dt;
+      if (G.t2 >= 1) { if (G.bossHp <= 0) startDying('kill'); else endPlayerTurn(); }
+      break;
+    case 'bossSay': {
+      const bb = G.bubble;
+      typerUpdate(bb.ty, dt, 34);
+      if (bb.ty.done) bb.wait += dt;
+      if (conf()) { if (!bb.ty.done) { bb.ty.n = bb.ty.text.length; bb.ty.done = true; } else startAttack(); }
+      else if (bb.wait > 0.8) startAttack();
+      break;
+    }
+    case 'attack': updateAttack(dt); break;
+    case 'dead':
+      G.t2 += dt;
+      if (G.t2 > 1.7) { G.scene = 'over'; G.overT = 0; }
+      break;
+    case 'dying': {
+      const d = G.dying; d.t += dt;
+      if (d.type === 'kill') {
+        if (!d.spawned && d.t > 0.3) { d.spawned = true; burst(320, 95, 44, ['#ff7bb5', '#fff', '#ff4a6e'], 230, 1.2); sfx.shatter(); }
+      } else if (Math.random() < dt * 30) burst(250 + Math.random() * 140, 150, 1, ['#fff', '#ffe14a'], 40, 0.8);
+      if (d.t > 2.1) finishPage(d.type);
+      break;
+    }
+  }
+}
+function burst(x, y, n, cols, sp, s) {
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * 6.283, v = rand(0.3, 1) * sp;
+    PART.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 40, l: 0, m: rand(0.8, 1.6), c: cols[i % cols.length], s: rand(0.8, 1.6) * (s || 1), g: 260 });
+  }
+}
+function update(dt) {
+  G.t += dt;
+  for (const h of BGH) { h.y += h.v * dt; if (h.y > H + 10) { h.y = -10; h.x = Math.random() * W; } }
+  for (let i = PART.length - 1; i >= 0; i--) {
+    const p = PART[i]; p.l += dt; p.vy += p.g * dt; p.x += p.vx * dt; p.y += p.vy * dt;
+    if (p.l > p.m) PART.splice(i, 1);
+  }
+  processClicks();
+  music(dt);
+  switch (G.scene) {
+    case 'title': if (conf()) startGame(); break;
+    case 'cards': updateCards(dt); break;
+    case 'battle': updateBattle(dt); break;
+    case 'over':
+      G.overT += dt;
+      if (G.overT > 1.2 && conf()) { sfx.select(); beginBattle(true); }
+      break;
+  }
+  pressed.clear();
+}
+
+/* =====================================================================
+   렌더링
+===================================================================== */
+function drawBoss() {
+  const p = PAGES[G.page], t = G.t, d = G.dying;
+  let alpha = 1;
+  if (d) alpha = d.type === 'kill' ? (d.t < 0.3 ? 1 : 0) : Math.max(0, 1 - d.t / 1.8);
+  if (alpha <= 0) return;
+  const bob = Math.sin(t * 2.2) * 3, fx0 = 250, fy0 = 24 + bob;
+  ctx.globalAlpha = alpha;
+  const gr = ctx.createRadialGradient(320, 95, 20, 320, 95, 150);
+  gr.addColorStop(0, rgba(p.col, 0.35)); gr.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = gr; ctx.fillRect(120, 0, 400, 200);
+  const cnt = 3 + G.page * 2;
+  const orbit = front => {
+    for (let i = 0; i < cnt; i++) {
+      const a = t * (0.8 + G.page * 0.15) + i * 6.283 / cnt;
+      if ((Math.sin(a) > 0) !== front) continue;
+      drawHeart(320 + Math.cos(a) * 112, 96 + bob + Math.sin(a) * 70, 1.4 + (i % 2) * 0.6, i % 2 ? p.col : '#fff');
+    }
+  };
+  orbit(false);
+  const shk = G.shake > 0 ? (Math.random() - 0.5) * 16 : 0;
+  for (let i = 0; i < 14; i++) {
+    let off = shk;
+    if (G.page === 3 && Math.sin(t * 9 + i * 2.3) > 0.96) off += 6;
+    ctx.drawImage(faceC, 0, i * 5, 70, 5, fx0 + off, fy0 + i * 10, 140, 10);
+  }
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 4; ctx.strokeRect(fx0 - 2, fy0 - 2, 144, 144);
+  if (G.shake > 0) { ctx.fillStyle = 'rgba(255,40,80,.35)'; ctx.fillRect(fx0, fy0, 140, 140); }
+  if (G.page >= 2) {
+    ctx.beginPath();
+    ctx.moveTo(fx0 + 95, fy0); ctx.lineTo(fx0 + 80, fy0 + 30); ctx.lineTo(fx0 + 100, fy0 + 55); ctx.lineTo(fx0 + 85, fy0 + 82);
+    ctx.strokeStyle = '#000'; ctx.lineWidth = 4; ctx.stroke();
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.stroke();
+  }
+  if (G.page === 3) {
+    ctx.beginPath(); ctx.ellipse(320, fy0 - 9, 52, 8, 0, 0, 6.283);
+    ctx.strokeStyle = p.col; ctx.lineWidth = 3; ctx.stroke();
+  }
+  orbit(true);
+  ctx.globalAlpha = 1;
+
+  if (G.hpShow > 0) {
+    bar(fx0, 176, 140, 9, G.bossHpDisp / G.bossMax, '#3be86b', '#555');
+  }
+  if (G.pop) {
+    const y = 60 - Math.min(G.pop.t, 0.4) * 40 + (G.pop.t > 0.4 ? Math.sin((G.pop.t - 0.4) * 10) * 0 : 0);
+    txt(G.pop.s, 320, y, 28, '#000', 'center');
+    txt(G.pop.s, 318, y - 2, 28, G.pop.c, 'center');
+  }
+  if (G.bs === 'slash') {
+    const pr = clamp(G.t2 / 0.35, 0, 1);
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 6;
+    for (let i = 0; i < 3; i++) {
+      const ox = 262 + i * 34;
+      ctx.beginPath(); ctx.moveTo(ox, 40); ctx.lineTo(ox + 46 * pr, 40 + 110 * pr); ctx.stroke();
+    }
+  }
+}
+function drawHUD() {
+  const p = PAGES[G.page];
+  txt(`PAGE ${G.page + 1}/4`, 14, 12, 12, '#ffe14a');
+  txt(`${p.name} 〈${p.mood}〉`, 14, 28, 12, p.col);
+  txt('순애홍', 14, 50, 12, '#fff');
+  bar(60, 52, 130, 9, G.bossHpDisp / G.bossMax, '#ff4a6e');
+  txt('마음', 14, 68, 12, '#fff');
+  bar(60, 70, 130, 9, G.mercy / 100, G.mercy >= 100 ? '#ffe14a' : '#ff9cc7');
+  if (G.mercy >= 100) txt('용서 가능!', 14, 86, 12, '#ffe14a');
+}
+function drawBubble() {
+  const bb = G.bubble; if (!bb) return;
+  const x = 400, y = 44, w = 228, h = bb.n * 22 + 18;
+  ctx.fillStyle = '#fff'; ctx.fillRect(x, y, w, h);
+  ctx.beginPath(); ctx.moveTo(x, y + 18); ctx.lineTo(x - 14, y + 28); ctx.lineTo(x, y + 36); ctx.closePath(); ctx.fill();
+  font(16);
+  const lines = wrapLines(bb.ty.text.slice(0, bb.ty.n), 196);
+  lines.forEach((l, i) => txt(l, x + 14, y + 10 + i * 22, 16, '#000'));
+}
+function drawBox() {
+  const b = G.box;
+  ctx.fillStyle = '#000'; ctx.fillRect(b.x, b.y, b.w, b.h);
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 4;
+  ctx.strokeRect(b.x - 2, b.y - 2, b.w + 4, b.h + 4);
+}
+function drawDlg() {
+  const d = G.dlg; if (!d) return;
+  const b = G.box;
+  font(20);
+  const lines = wrapLines(d.ty.text.slice(0, d.ty.n), b.w - 60);
+  lines.forEach((l, i) => txt(l, b.x + 26, b.y + 18 + i * 28, 20, '#fff'));
+}
+function drawSub() {
+  const b = G.box;
+  G.list.forEach((it, i) => {
+    const col = i % 2, row = Math.floor(i / 2);
+    const x = b.x + 64 + col * 250, y = b.y + 18 + row * 40;
+    txt(it.n, x, y, 20, it.y ? '#ffe14a' : '#fff');
+    if (i === G.subSel) drawHeart(x - 24, y + 11, 2, '#ff2b3a');
+    G.click.push({ x: x - 30, y: y - 6, w: 240, h: 34, fn: () => { G.subSel = i; subPick(i); } });
+  });
+  txt('[X] 뒤로', b.x + b.w - 14, b.y + b.h - 26, 12, '#999', 'right');
+  G.click.push({ x: b.x + b.w - 90, y: b.y + b.h - 34, w: 90, h: 30, fn: () => toMenu() });
+}
+function drawFight() {
+  const b = G.box, f = G.fight; if (!f) return;
+  const x0 = b.x + 16, x1 = b.x + b.w - 16, cy = b.y + b.h / 2, h = 96;
+  const gx = ctx.createLinearGradient(x0, 0, x1, 0);
+  gx.addColorStop(0, '#3a1230'); gx.addColorStop(0.5, '#ffb3d4'); gx.addColorStop(1, '#3a1230');
+  ctx.fillStyle = gx; ctx.fillRect(x0, cy - h / 2, x1 - x0, h);
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 3; ctx.strokeRect(x0, cy - h / 2, x1 - x0, h);
+  ctx.fillStyle = '#fff'; ctx.fillRect((x0 + x1) / 2 - 1, cy - h / 2, 2, h);
+  const cx = x0 + f.pos * (x1 - x0);
+  ctx.fillStyle = f.stopped && Math.floor(G.t * 14) % 2 ? '#ff4a6e' : '#fff';
+  ctx.fillRect(cx - 4, cy - h / 2 - 8, 8, h + 16);
+  ctx.strokeStyle = '#000'; ctx.lineWidth = 2; ctx.strokeRect(cx - 4, cy - h / 2 - 8, 8, h + 16);
+}
+function drawBlaster(bl) {
+  if (bl.t < 0) return;
+  const c = Math.cos(bl.a), s = Math.sin(bl.a);
+  const slide = Math.min(1, bl.t / 0.25), e = 1 - Math.pow(1 - slide, 3);
+  const px = bl.x - c * 50 * (1 - e), py = bl.y - s * 50 * (1 - e);
+  const end = bl.charge + bl.fire;
+  if (bl.t < bl.charge) {
+    ctx.save(); ctx.translate(bl.x, bl.y); ctx.rotate(bl.a);
+    ctx.fillStyle = 'rgba(255,140,190,.10)'; ctx.fillRect(0, -bl.hw, 1000, bl.hw * 2);
+    ctx.fillStyle = `rgba(255,255,255,${0.25 + 0.3 * Math.sin(bl.t * 30)})`; ctx.fillRect(0, -1, 1000, 2);
+    ctx.restore();
+  } else if (bl.t < end + 0.1 && bl.w > 0.5) {
+    const w = bl.w;
+    ctx.save(); ctx.translate(bl.x, bl.y); ctx.rotate(bl.a);
+    ctx.fillStyle = 'rgba(255,110,170,.35)'; ctx.fillRect(0, -w * 1.3, 1000, w * 2.6);
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, -w, 1000, w * 2);
+    ctx.fillStyle = '#ffd0e6'; ctx.fillRect(0, -w * 0.45, 1000, w * 0.9 * (0.8 + 0.2 * Math.sin(G.t * 60)));
+    ctx.restore();
+  }
+  const fade = bl.t > end ? Math.max(0, 1 - (bl.t - end) / 0.25) : 1;
+  ctx.globalAlpha = fade;
+  const shake = bl.t >= bl.charge ? (Math.random() - 0.5) * 4 : 0;
+  drawHeart(px + shake, py + shake, 5.5, bl.t < bl.charge && Math.floor(bl.t * 16) % 2 ? '#ff9cc7' : '#ffffff', bl.a - Math.PI / 2);
+  ctx.save(); ctx.translate(px, py); ctx.rotate(bl.a);
+  ctx.fillStyle = '#000'; ctx.fillRect(10, -4, 14, 8);
+  ctx.fillStyle = bl.t >= bl.charge ? '#ffd0e6' : '#ff4a6e'; ctx.fillRect(12, -2, 10, 4);
+  ctx.restore();
+  ctx.globalAlpha = 1;
+}
+function drawArrow(a) {
+  const b = G.box, fl = b.y + b.h;
+  ctx.fillStyle = '#fff';
+  if (a.dir === 'up') {
+    ctx.fillRect(a.x - 2, fl - a.h + 8, 4, a.h - 8);
+    drawHeart(a.x, fl - a.h + 5, 1.9, '#ff7bb5');
+  } else {
+    ctx.fillRect(a.x - 2, b.y, 4, a.h - 8);
+    drawHeart(a.x, b.y + a.h - 5, 1.9, '#ff7bb5');
+  }
+}
+function drawStats() {
+  txt('당신', 32, 380, 16, '#fff');
+  txt(`LV ${LVS[G.kills]}`, 100, 380, 16, '#fff');
+  txt('HP', 200, 384, 12, '#fff');
+  bar(224, 381, 90, 16, G.hp / G.maxHp, '#ffe14a', '#c8002e');
+  txt(`${G.hp} / ${G.maxHp}`, 324, 380, 16, '#fff');
+  const left = G.items.length;
+  txt(`아이템 ${left}개`, 608, 384, 12, '#aaa', 'right');
+}
+function drawButtons() {
+  const labels = ['공격', '행동', '아이템', '자비'];
+  const active = G.bs === 'menu' || G.bs === 'sub';
+  for (let i = 0; i < 4; i++) {
+    const x = 24 + i * 152, y = 410, w = 136, h = 42;
+    const sel = G.bs === 'menu' && i === G.sel;
+    const col = sel ? '#ffe14a' : '#ff8a1f';
+    ctx.globalAlpha = active ? 1 : 0.5;
+    ctx.strokeStyle = col; ctx.lineWidth = 3; ctx.strokeRect(x, y, w, h);
+    txt(labels[i], x + w / 2 + (sel ? 10 : 0), y + 10, 20, col, 'center');
+    if (sel) drawHeart(x + 26, y + h / 2, 2, '#ff2b3a');
+    ctx.globalAlpha = 1;
+    if (G.bs === 'menu') G.click.push({ x, y, w, h, fn: () => { G.sel = i; menuConfirm(); } });
+  }
+  txt('Z 확인 · X 취소/천천히 · 방향키/WASD 이동 · 파란 영혼: ↑/Space 점프 · M 소리', 320, 462, 11, '#666', 'center');
+}
+function drawSoul() {
+  const S = G.soul;
+  if (!S.show) return;
+  if (S.inv > 0 && G.bs === 'attack' && Math.floor(G.t * 14) % 2) return;
+  drawHeart(S.x, S.y, 2, S.blue ? '#2f6bff' : '#ff2b3a');
+}
+function drawBattle() {
+  const sx = G.pShake > 0 ? (Math.random() - 0.5) * 8 : 0, sy = G.pShake > 0 ? (Math.random() - 0.5) * 8 : 0;
+  ctx.save(); ctx.translate(sx, sy);
+  for (let i = 0; i < 14; i++) {
+    ctx.fillStyle = `rgba(190,215,255,${0.15 + 0.15 * Math.sin(G.t * 2 + i)})`;
+    ctx.fillRect((i * 137 + 41) % W, (i * 73 + 19) % 190, 2, 2);
+  }
+  drawBoss();
+  drawHUD();
+  if (G.bs === 'bossSay') drawBubble();
+  drawBox();
+
+  if (G.bs === 'say' || G.bs === 'menu') drawDlg();
+  else if (G.bs === 'sub') drawSub();
+  else if (G.bs === 'fight' || G.bs === 'slash' || G.bs === 'result') { if (G.fight && G.bs !== 'result') drawFight(); }
+
+  if (G.bs === 'attack' || G.bs === 'bossSay' || G.bs === 'dead') {
+    ctx.save();
+    ctx.beginPath(); ctx.rect(G.box.x, G.box.y, G.box.w, G.box.h); ctx.clip();
+    AR.forEach(drawArrow);
+    ctx.restore();
+    if (G.soul.blue && G.bs === 'attack') { ctx.fillStyle = '#2f6bff'; ctx.fillRect(G.box.x, G.box.y + G.box.h - 3, G.box.w, 3); }
+    HB.forEach(h => drawHeart(h.x, h.y, h.s, '#fff', Math.sin(h.rot) * 0.15));
+    BL.forEach(drawBlaster);
+  }
+  if (G.bs === 'dead') { /* 영혼은 파편으로 대체 */ } else drawSoul();
+  if (G.bs === 'menu' || G.bs === 'sub') { /* 선택 하트는 버튼/리스트에서 그림 */ }
+
+  for (const p of PART) drawHeartA(p.x, p.y, p.s, p.c, clamp(1 - p.l / p.m, 0, 1));
+  drawStats();
+  drawButtons();
+  if (G.flash > 0) { ctx.fillStyle = `rgba(255,255,255,${G.flash * 3})`; ctx.fillRect(0, 0, W, H); }
+  if (G.redFlash > 0) { ctx.fillStyle = `rgba(255,0,40,${G.redFlash * 2})`; ctx.fillRect(0, 0, W, H); }
+  ctx.restore();
+}
+function drawOver() {
+  for (const p of PART) drawHeartA(p.x, p.y, p.s, p.c, clamp(1 - p.l / p.m, 0, 1));
+  const a = clamp(G.overT / 0.8, 0, 1);
+  ctx.globalAlpha = a;
+  txt('GAME OVER', 320, 120, 56, '#fff', 'center');
+  txt('포기하지 마!', 320, 220, 24, '#ffe14a', 'center');
+  txt('순애홍의 마음은 아직 전해지지 않았어.', 320, 262, 16, '#ccc', 'center');
+  ctx.globalAlpha = 1;
+  if (G.overT > 1.2 && Math.floor(G.t * 2) % 2 === 0) txt('Z / 클릭 : 이 페이지 다시 도전', 320, 340, 18, '#ff9cc7', 'center');
+}
+/* 시작 화면 메뉴 (이름 / 사진 선택) */
+const titleMenu = document.getElementById('titleMenu');
+const tmName = document.getElementById('tmName'), tmPhoto = document.getElementById('tmPhoto');
+const tmNameV = document.getElementById('tmNameV'), tmPhotoV = document.getElementById('tmPhotoV');
+['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'touchstart', 'touchend', 'click'].forEach(ev =>
+  titleMenu.addEventListener(ev, e => e.stopPropagation()));
+tmName.addEventListener('click', () => { document.getElementById('nameBtn').click(); tmName.blur(); });
+tmPhoto.addEventListener('click', () => { document.getElementById('photoBtn').click(); tmPhoto.blur(); });
+let tmShown = null, tmKey = '';
+function syncTitleMenu() {
+  const on = G.scene === 'title';
+  if (on !== tmShown) { titleMenu.hidden = !on; tmShown = on; }
+  if (!on) return;
+  const k = BOSS + '|' + hasPhoto;
+  if (k === tmKey) return;
+  tmKey = k;
+  tmNameV.textContent = '현재: ' + BOSS;
+  tmPhotoV.textContent = hasPhoto ? '선택됨 ✔' : '기본 얼굴 사용 중';
+}
+function render() {
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+  G.click = [];
+  if (G.scene === 'title') { drawTitle(); G.click.length = 0; }
+  else if (G.scene === 'cards') drawCards();
+  else if (G.scene === 'over') drawOver();
+  else drawBattle();
+  syncTitleMenu();
+}
+
+/* =====================================================================
+   메인 루프
+===================================================================== */
+let last = 0;
+function loop(ms) {
+  const dt = Math.min(0.033, (ms - last) / 1000 || 0);
+  last = ms;
+  update(dt);
+  render();
+  requestAnimationFrame(loop);
+}
+if (document.fonts && document.fonts.load) { document.fonts.load('20px Galmuri11').catch(() => {}); }
+requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
